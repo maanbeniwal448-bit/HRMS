@@ -22,8 +22,7 @@ if uploaded_file is not None:
     # 1. INTERACTIVE EMPLOYEE FILTERS
     # ==========================================
    
-import streamlit as st
-import pandas as pd
+
 
 st.title("Comprehensive HR Management System")
 
