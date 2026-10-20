@@ -17,6 +17,56 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+    
+    # ==========================================
+    # 1. INTERACTIVE EMPLOYEE FILTERS
+    # ==========================================
+    st.header("Interactive Employee Filters")
+
+    filtered_df = df.copy()
+
+    filter_columns = [
+        col for col in df.columns
+        if any(word in col.lower() for word in [
+            "department", "job_role", "job role",
+            "designation", "gender"
+        ])
+        and df[col].nunique(dropna=True) <= 100
+    ]
+
+    for col in filter_columns:
+        options = sorted(
+            df[col].dropna().astype(str).unique().tolist()
+        )
+
+        selected = st.multiselect(
+            f"Filter by {col}",
+            options,
+            key=f"filter_{col}"
+        )
+
+        if selected:
+            filtered_df = filtered_df[
+                filtered_df[col].astype(str).isin(selected)
+            ]
+
+    st.write("Filtered employee records:", len(filtered_df))
+    st.dataframe(filtered_df, width="stretch")
+
+    # ==========================================
+    # 2. DOWNLOAD FILTERED DATA AS CSV
+    # ==========================================
+    st.header("Download HR Report")
+
+    csv_data = filtered_df.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Download Filtered Employee Data (CSV)",
+        data=csv_data,
+        file_name="HRMS_Filtered_Report.csv",
+        mime="text/csv"
+    )
+
     excel_data = pd.ExcelFile(uploaded_file)
 
     sheet_name = st.selectbox(
