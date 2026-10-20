@@ -140,3 +140,43 @@ if uploaded_file is not None:
 
 else:
     st.info("Upload your Excel dataset to start.")
+    
+    st.subheader("Workforce KPI Summary")
+
+    def find_numeric_column(keywords):
+        for column in df.columns:
+            name = column.lower().replace("_", " ")
+            if any(word in name for word in keywords):
+                if pd.api.types.is_numeric_dtype(df[column]):
+                    return column
+        return None
+
+    kpi_options = [
+        ("Average Age", ["age"]),
+        ("Average Attendance", ["attendance"]),
+        ("Average Performance", ["performance", "rating", "score"]),
+        ("Average Training Hours", ["training", "hours"])
+    ]
+
+    available_kpis = []
+
+    for label, keywords in kpi_options:
+        column = find_numeric_column(keywords)
+
+        if column is not None:
+            value = df[column].mean()
+
+            if pd.notna(value):
+                available_kpis.append((label, value))
+
+    if available_kpis:
+        cards = st.columns(len(available_kpis))
+
+        for card, (label, value) in zip(cards, available_kpis):
+            card.metric(label, f"{value:,.2f}")
+    else:
+        st.info(
+            "No matching numeric KPI columns were found. "
+            "Check your Excel column names and data types."
+        )
+
