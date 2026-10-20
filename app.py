@@ -31,23 +31,36 @@ if uploaded_file is not None:
     )
     
     # HR employee metrics
-    st.subheader("HR Overview")
+    
+st.subheader("HR Overview")
 
-   
-    st.subheader("HR Analytics Dashboard")
+if selected_sheet == "Employees":
+    # Keep your existing employee metrics here
+    pass
 
-    # Basic employee and data metrics
-    col1, col2, col3 = st.columns(3)
+elif selected_sheet == "Departments":
+    total_departments = len(df)
 
-    col1.metric("Total Records", len(df))
-    col2.metric("Total Columns", len(df.columns))
-    col3.metric(
-        "Duplicate Rows",
-        int(df.duplicated().sum())
-    )
+    col1, col2 = st.columns(2)
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head(10), use_container_width=True)
+    col1.metric("Total Departments", total_departments)
+
+    if "department_name" in df.columns:
+        col2.metric(
+            "Unique Department Names",
+            df["department_name"].nunique()
+        )
+
+elif selected_sheet == "Resignations":
+    col1, col2 = st.columns(2)
+
+    col1.metric("Total Resignations", len(df))
+
+    if "employee_id" in df.columns:
+        col2.metric(
+            "Employees Resigned",
+            df["employee_id"].nunique()
+        )
 
     # Find relevant columns automatically
     department_col = next(
