@@ -33,92 +33,74 @@ if uploaded_file is not None:
     # HR employee metrics
     st.subheader("HR Overview")
 
-    df.columns = df.columns.str.strip()
+   
+    st.subheader("HR Analytics Dashboard")
 
-    def find_column(possible_names):
-        column_map = {
-            col.lower().replace(" ", "_"): col
-            for col in df.columns
-        }
-
-        for name in possible_names:
-            key = name.lower().replace(" ", "_")
-            if key in column_map:
-                return column_map[key]
-
-        return None
-
-    employee_col = find_column([
-        "employee_id", "emp_id", "employeeid"
-    ])
-    salary_col = find_column([
-        "salary", "monthly_salary", "annual_salary"
-    ])
-    age_col = find_column([
-        "age", "employee_age"
-    ])
-    department_col = find_column([
-        "department", "department_name"
-    ])
-
-    total_employees = (
-        df[employee_col].nunique()
-        if employee_col else len(df)
-    )
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.metric("Total Employees", total_employees)
-
-    if salary_col:
-        avg_salary = pd.to_numeric(
-            df[salary_col], errors="coerce"
-        ).mean()
-        c2.metric(
-            "Average Salary",
-            f"{avg_salary:,.2f}"
-            if pd.notna(avg_salary) else "N/A"
-        )
-    else:
-        c2.metric("Average Salary", "Column not found")
-
-    if age_col:
-        avg_age = pd.to_numeric(
-            df[age_col], errors="coerce"
-        ).mean()
-        c3.metric(
-            "Average Age",
-            f"{avg_age:.1f} years"
-            if pd.notna(avg_age) else "N/A"
-        )
-    else:
-        c3.metric("Average Age", "Column not found")
-
-    if department_col:
-        c4.metric(
-            "Departments",
-            df[department_col].nunique()
-        )
-    else:
-        c4.metric("Departments", "Column not found")
-
-
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head(10), use_container_width=True)
-
+    # Basic employee and data metrics
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Total Rows", len(df))
+    col1.metric("Total Records", len(df))
     col2.metric("Total Columns", len(df.columns))
     col3.metric(
         "Duplicate Rows",
         int(df.duplicated().sum())
     )
 
-    st.subheader("Missing Values")
-    st.dataframe(
-        df.isnull().sum().rename("Missing Values")
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head(10), use_container_width=True)
+
+    # Find relevant columns automatically
+    department_col = next(
+        (c for c in df.columns
+         if "department" in c.lower()),
+        None
     )
+
+    salary_col = next(
+        (c for c in df.columns
+         if "salary" in c.lower() and
+         pd.api.types.is_numeric_dtype(df[c])),
+        None
+    )
+
+    if department_col:
+        st.subheader("Department-wise Employee Count")
+
+        department_counts = (
+            df[department_col]
+            .fillna("Unknown")
+            .value_counts()
+        )
+
+        st.bar_chart(department_counts)
+
+    if salary_col:
+        st.subheader("Salary Analysis")
+
+        avg_salary = df[salary_col].mean()
+        min_salary = df[salary_col].min()
+        max_salary = df[salary_col].max()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Average Salary", f"{avg_salary:,.2f}")
+        col2.metric("Minimum Salary", f"{min_salary:,.2f}")
+        col3.metric("Maximum Salary", f"{max_salary:,.2f}")
+
+        st.bar_chart(df[salary_col].dropna())
+
+    st.subheader("Missing Values Analysis")
+
+    missing_values = (
+        df.isnull().sum()
+        .sort_values(ascending=False)
+    )
+
+    st.dataframe(
+        missing_values.rename("Missing Values"),
+        use_container_width=True
+    )
+
+    st.subheader("Numerical Data Analysis")
 
     numeric_columns = df.select_dtypes(
         include="number"
@@ -126,22 +108,16 @@ if uploaded_file is not None:
 
     if numeric_columns:
         selected_column = st.selectbox(
-            "Select a column for analysis",
+            "Select a numerical column",
             numeric_columns
         )
 
-        fig, ax = plt.subplots()
-        df[selected_column].dropna().plot(
-            kind="hist", bins=20, ax=ax
-        )
-        ax.set_title(f"Distribution of {selected_column}")
-        st.pyplot(fig)
-        plt.close(fig)
+        st.write(df[selected_column].describe())
 
-else:
-    st.info("Upload your Excel dataset to start.")
-    
-   
+        st.bar_chart(
+            df[selected_column].dropna()
+            .reset_index(drop=True)
+        )
 
    
            
