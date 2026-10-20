@@ -17,46 +17,6 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    
-    # ==========================================
-    # 1. INTERACTIVE EMPLOYEE FILTERS
-    # ==========================================
-   
-
-
-st.title("Comprehensive HR Management System")
-
-uploaded_file = st.file_uploader(
-    "Upload your HR Excel file",
-    type=["xlsx", "xls", "csv"]
-)
-
-if uploaded_file is not None:
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-
-    st.subheader("Employee Data Preview")
-    st.dataframe(df.head(), width="stretch")
-
-    # Put your filter and download code here,
-    # indented by four spaces inside this block.
-
-    # ==========================================
-    # 2. DOWNLOAD FILTERED DATA AS CSV
-    # ==========================================
-    st.header("Download HR Report")
-
-    csv_data = filtered_df.to_csv(index=False).encode("utf-8")
-
-    st.download_button(
-        label="Download Filtered Employee Data (CSV)",
-        data=csv_data,
-        file_name="HRMS_Filtered_Report.csv",
-        mime="text/csv"
-    )
-
     excel_data = pd.ExcelFile(uploaded_file)
 
     sheet_name = st.selectbox(
@@ -160,6 +120,4 @@ if uploaded_file is not None:
 
    
            
-
-
 
