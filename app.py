@@ -144,7 +144,5 @@ else:
    
 
    
-            "No matching numeric KPI columns were found. "
-            "Check your Excel column names and data types."
-        )
+           
 
