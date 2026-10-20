@@ -17,8 +17,7 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-        st.subheader("Check Columns for Attrition Analysis")
-    st.write(df.columns.tolist())
+        
     excel_data = pd.ExcelFile(uploaded_file)
 
     sheet_name = st.selectbox(
