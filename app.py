@@ -34,7 +34,7 @@ if uploaded_file is not None:
     
 st.subheader("HR Overview")
 
-if selected_sheet_name == "Employees":
+if selected_sheet== "Employees":
     # Keep your existing employee metrics here
     pass
 
