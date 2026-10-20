@@ -21,37 +21,28 @@ if uploaded_file is not None:
     # ==========================================
     # 1. INTERACTIVE EMPLOYEE FILTERS
     # ==========================================
-    st.header("Interactive Employee Filters")
+   
+import streamlit as st
+import pandas as pd
 
-    filtered_df = df.copy()
+st.title("Comprehensive HR Management System")
 
-    filter_columns = [
-        col for col in df.columns
-        if any(word in col.lower() for word in [
-            "department", "job_role", "job role",
-            "designation", "gender"
-        ])
-        and df[col].nunique(dropna=True) <= 100
-    ]
+uploaded_file = st.file_uploader(
+    "Upload your HR Excel file",
+    type=["xlsx", "xls", "csv"]
+)
 
-    for col in filter_columns:
-        options = sorted(
-            df[col].dropna().astype(str).unique().tolist()
-        )
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
 
-        selected = st.multiselect(
-            f"Filter by {col}",
-            options,
-            key=f"filter_{col}"
-        )
+    st.subheader("Employee Data Preview")
+    st.dataframe(df.head(), width="stretch")
 
-        if selected:
-            filtered_df = filtered_df[
-                filtered_df[col].astype(str).isin(selected)
-            ]
-
-    st.write("Filtered employee records:", len(filtered_df))
-    st.dataframe(filtered_df, width="stretch")
+    # Put your filter and download code here,
+    # indented by four spaces inside this block.
 
     # ==========================================
     # 2. DOWNLOAD FILTERED DATA AS CSV
