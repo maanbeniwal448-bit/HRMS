@@ -322,11 +322,12 @@ st.subheader("Dataset Preview")
 filtered_df = df.copy()
 with st.expander("Filter the displayed data", expanded=False):
     filter_columns = st.multiselect(
-        "Choose columns to filter",
-        options=df.columns.tolist(),
-        default=[],
-        key=f"filter_columns_{selected_sheet_name}",
-    )
+    "Choose columns to filter",
+    options=df.columns.tolist(),
+    default=[],
+    key=f"filter_columns_{selected_sheet_name}",
+    placeholder="Select one or more columns...",
+)
     filtered_df = df.copy()
     for col in filter_columns:
         non_null_values = filtered_df[col].dropna().unique().tolist()
