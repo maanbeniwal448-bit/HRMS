@@ -359,11 +359,11 @@ with st.expander("Filter the displayed data", expanded=False):
 st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
-            placeholder=f"Choose {col} values...",
-        )
+        placeholder=f"Choose {col} values...",
+       )
 
         # Apply a filter only when the user selects values.
-                chosen = st.multiselect(
+        chosen = st.multiselect(
             f"Select values for {col}",
             options=choices,
             default=[],
