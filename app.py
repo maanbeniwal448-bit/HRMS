@@ -70,12 +70,18 @@ def money(value):
         return "—"
 
 
+@st.cache_data(show_spinner=False, max_entries=8)
 def excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
     buff = BytesIO()
     with pd.ExcelWriter(buff, engine="openpyxl") as writer:
         for name, frame in sheets.items():
             frame.to_excel(writer, sheet_name=str(name)[:31] or "Data", index=False)
     return buff.getvalue()
+
+
+@st.cache_data(show_spinner=False, max_entries=16)
+def csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
 
 
 def safe_date_series(frame, col):
@@ -107,6 +113,7 @@ def clean_frame(frame):
     return frame.dropna(how="all").reset_index(drop=True)
 
 
+@st.cache_data(show_spinner=False, max_entries=1)
 def demo_data():
     """Reproducible fictional sample data; never presented as real company data."""
     import numpy as np
@@ -133,12 +140,13 @@ def demo_data():
     dept = rng.choice(departments, n, p=[.28,.08,.10,.16,.12,.12,.07,.07])
     statuses = rng.choice(["Active", "Active", "Active", "Active", "On Leave", "Inactive"], n,
                           p=[.64,.12,.08,.06,.06,.04])
-    join_start = pd.Timestamp("2019-01-01")
-    join_days = rng.integers(0, 7 * 365, n)
+    today = pd.Timestamp.today().normalize()
+    join_start = today - pd.Timedelta(days=7 * 365)
+    join_days = rng.integers(0, 7 * 365 + 1, n)
     employees = pd.DataFrame({
         "employee_id": [f"EMP{i+1001}" for i in range(n)],
         "employee_name": names,
-        "email": [f"{norm(x)}{i%9}@example.com" for i, x in enumerate(names)],
+        "email": [f"{norm(x)}{i+1001}@peopledesk.example" for i, x in enumerate(names)],
         "department": dept,
         "job_title": [str(rng.choice(titles[d])) for d in dept],
         "location": rng.choice(["Delhi", "Bengaluru", "Mumbai", "Hyderabad", "Pune"], n),
@@ -162,13 +170,18 @@ def demo_data():
                                 p=[.68,.10,.06,.08,.04,.04])
             att_rows.append((emp, day, status, round(float(rng.normal(8.2, .7)), 1) if status not in ("Absent",) else 0))
     attendance = pd.DataFrame(att_rows, columns=["employee_id", "attendance_date", "attendance_status", "hours_worked"])
-    salaries = employees[["employee_id", "employee_name", "department", "annual_salary"]].copy()
+    # Payroll sample includes current employees only and reconciles gross/net components.
+    payroll_employees = employees[employees["status"].isin(["Active", "On Leave"])][
+        ["employee_id", "employee_name", "department", "annual_salary"]
+    ].copy()
+    salaries = payroll_employees
     salaries["pay_month"] = today.replace(day=1)
-    salaries["basic_salary"] = (salaries["annual_salary"] / 12 * .5).round(0)
-    salaries["allowances"] = (salaries["annual_salary"] / 12 * .35).round(0)
-    salaries["deductions"] = (salaries["annual_salary"] / 12 * .08).round(0)
-    salaries["net_salary"] = (salaries["annual_salary"] / 12 - salaries["deductions"]).round(0)
-    salaries["payroll_status"] = rng.choice(["Processed", "Processed", "Pending"], n, p=[.92,.05,.03])
+    salaries["gross_salary"] = (salaries["annual_salary"] / 12).round(0)
+    salaries["basic_salary"] = (salaries["gross_salary"] * .50).round(0)
+    salaries["allowances"] = (salaries["gross_salary"] * .30).round(0)
+    salaries["deductions"] = (salaries["gross_salary"] * .08).round(0)
+    salaries["net_salary"] = (salaries["basic_salary"] + salaries["allowances"] - salaries["deductions"]).round(0)
+    salaries["payroll_status"] = rng.choice(["Processed", "Pending", "On Hold"], len(salaries), p=[.94, .04, .02])
     leaves = []
     leave_types = ["Annual Leave", "Sick Leave", "Personal Leave", "Compensatory Off"]
     for i in range(45):
@@ -211,6 +224,13 @@ def demo_data():
         "Salaries": salaries, "Leave Requests": pd.DataFrame(leaves),
         "Recruitment": recruitment, "Resignations": resignations,
     }
+
+
+@st.cache_data(show_spinner="Reading workbook…", max_entries=4)
+def load_workbook_data(file_bytes: bytes):
+    """Parse and normalize an uploaded workbook once per distinct file content."""
+    book = pd.ExcelFile(BytesIO(file_bytes))
+    return {name: clean_frame(pd.read_excel(book, sheet_name=name)) for name in book.sheet_names}
 
 
 def classify_sheet(name):
@@ -280,8 +300,7 @@ if source == "Uploaded Excel workbook":
         st.warning("Upload an Excel workbook in the sidebar, or select Fictional demo data.")
         st.stop()
     try:
-        book = pd.ExcelFile(uploaded)
-        all_data = {name: clean_frame(pd.read_excel(book, sheet_name=name)) for name in book.sheet_names}
+        all_data = load_workbook_data(uploaded.getvalue())
     except Exception as exc:
         st.error(f"Could not read the workbook. Check that it is a valid Excel file. Details: {exc}")
         st.stop()
@@ -471,7 +490,7 @@ if page == "Overview":
             recent["_sort_join_date"] = safe_date_series(recent, join_col)
             recent = recent.sort_values("_sort_join_date", ascending=False, na_position="last").drop(columns=["_sort_join_date"])
         st.dataframe(recent.head(10), use_container_width=True, hide_index=True)
-        st.download_button("Download employee snapshot (CSV)", emp_df.to_csv(index=False).encode("utf-8-sig"),
+        st.download_button("Download employee snapshot (CSV)", csv_bytes(emp_df),
                            file_name="employee_snapshot.csv", mime="text/csv")
     else:
         st.info("Employee records will appear here when an employee worksheet is available.")
@@ -498,7 +517,8 @@ elif page == "Employee Directory":
         location_filter = st.multiselect("Location", locations, default=[])
     shown = frame.copy()
     if search.strip():
-        mask = shown.astype(str).apply(lambda s: s.str.contains(search.strip(), case=False, na=False, regex=False)).any(axis=1)
+        search_text = search.strip().casefold()
+        mask = shown.astype(str).agg(" ".join, axis=1).str.casefold().str.contains(search_text, regex=False, na=False)
         shown = shown[mask]
     if dept_col and dept_filter:
         shown = shown[shown[dept_col].astype(str).isin(dept_filter)]
@@ -508,7 +528,7 @@ elif page == "Employee Directory":
         shown = shown[shown[location_col].astype(str).isin(location_filter)]
     st.caption(f"{len(shown):,} employees/records match the current filters.")
     st.dataframe(shown, use_container_width=True, hide_index=True)
-    st.download_button("Export filtered directory as CSV", shown.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Export filtered directory as CSV", csv_bytes(shown),
                        file_name="employee_directory_filtered.csv", mime="text/csv")
     st.download_button("Export filtered directory as Excel", excel_bytes({"Employees": shown}),
                        file_name="employee_directory_filtered.xlsx",
@@ -529,7 +549,7 @@ elif page == "Attendance":
                     ("Columns available", f"{len(frame.columns):,}", None)])
         st.info("Could not identify a status column. The raw attendance records are still available below.")
     st.dataframe(frame, use_container_width=True, hide_index=True)
-    st.download_button("Download attendance CSV", frame.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Download attendance CSV", csv_bytes(frame),
                        file_name="attendance.csv", mime="text/csv")
 
 elif page == "Payroll":
@@ -550,7 +570,7 @@ elif page == "Payroll":
         metric_row([("Payroll records", f"{len(frame):,}", None), ("Columns", f"{len(frame.columns):,}", None)])
     st.caption("Payroll figures are shown for analysis only. This demo does not calculate statutory deductions or process payments.")
     st.dataframe(frame, use_container_width=True, hide_index=True)
-    st.download_button("Download payroll CSV", frame.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Download payroll CSV", csv_bytes(frame),
                        file_name="payroll_export.csv", mime="text/csv")
 
 elif page == "Leave Management":
@@ -569,7 +589,7 @@ elif page == "Leave Management":
         st.info("No leave status column was detected. Showing all available records.")
     st.dataframe(shown, use_container_width=True, hide_index=True)
     st.caption("This is a reporting view. Approval changes are not written back to your original workbook.")
-    st.download_button("Download leave register CSV", shown.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Download leave register CSV", csv_bytes(shown),
                        file_name="leave_register.csv", mime="text/csv")
 
 elif page == "Recruitment":
@@ -585,7 +605,7 @@ elif page == "Recruitment":
     if candidate_col and pd.to_numeric(frame[candidate_col], errors="coerce").notna().any():
         metric_row([("Candidates", f"{int(pd.to_numeric(frame[candidate_col], errors='coerce').sum()):,}", "Sum of candidate counts across requisitions")])
     st.dataframe(frame, use_container_width=True, hide_index=True)
-    st.download_button("Download recruitment pipeline CSV", frame.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Download recruitment pipeline CSV", csv_bytes(frame),
                        file_name="recruitment_pipeline.csv", mime="text/csv")
 
 elif page == "Exits & Attrition":
@@ -613,7 +633,7 @@ elif page == "Exits & Attrition":
         else:
             st.info("No exit date field found.")
     st.dataframe(frame, use_container_width=True, hide_index=True)
-    st.download_button("Download exit records CSV", frame.to_csv(index=False).encode("utf-8-sig"),
+    st.download_button("Download exit records CSV", csv_bytes(frame),
                        file_name="exit_records.csv", mime="text/csv")
 
 elif page == "Data Quality":
@@ -661,18 +681,17 @@ else:  # Data Explorer
             st.caption(f"Skipping {col}: too many distinct values ({len(values):,}).")
             continue
         selected_values = st.multiselect(
-            f"Values for {col}", options=values, default=values,
+            f"Values for {col}", options=values, default=[],
             key=f"explorer_values_{selected}_{col}",
+            help="Leave empty to include all values; select one or more values to narrow the table.",
         )
         if selected_values:
             filtered = filtered[filtered[col].astype(str).isin(selected_values)]
-        else:
-            filtered = filtered.iloc[0:0]
     st.caption(f"Showing {len(filtered):,} of {len(frame):,} rows.")
     st.dataframe(filtered, use_container_width=True, hide_index=True)
     c1, c2 = st.columns(2)
     with c1:
-        st.download_button("Export filtered data as CSV", filtered.to_csv(index=False).encode("utf-8-sig"),
+        st.download_button("Export filtered data as CSV", csv_bytes(filtered),
                            file_name=f"{norm(selected)}_filtered.csv", mime="text/csv", use_container_width=True)
     with c2:
         st.download_button("Export filtered data as Excel", excel_bytes({selected: filtered}),
