@@ -29,7 +29,11 @@ st.markdown("""
 [data-testid="stMetric"] {background: rgba(128,128,128,.07); border: 1px solid rgba(128,128,128,.18);
   padding: 15px 17px; border-radius: 13px;}
 [data-testid="stMetricLabel"] {font-size: .88rem;}
+[data-testid="stMetricValue"] {font-weight: 700;}
 div[data-testid="stDataFrame"] {border: 1px solid rgba(128,128,128,.15); border-radius: 10px;}
+.stDownloadButton button {border-radius: 9px; font-weight: 600;}
+section[data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.15);}
+[data-testid="stPlotlyChart"] {border: 1px solid rgba(128,128,128,.12); border-radius: 12px; padding: 6px;}
 .hero {padding: 1.1rem 1.3rem; border: 1px solid rgba(128,128,128,.2); border-radius: 16px;
   background: linear-gradient(120deg, rgba(70,110,180,.13), rgba(40,170,150,.07)); margin-bottom: 1rem;}
 .hero h1 {margin: 0; font-size: 1.8rem;}
@@ -329,51 +333,148 @@ date_col = find_col(frame, ["joining_date", "attendance_date", "pay_date", "date
 
 # ---------------------------- Page renderers --------------------------------
 if page == "Overview":
+    # Build the overview from each relevant worksheet rather than the currently
+    # selected sheet, so changing a sidebar page does not distort the KPIs.
     emp_pairs = matching_frames("Employees")
-    emp_df = emp_pairs[0][1].copy() if emp_pairs else frame.copy()
-    emp_status = find_col(emp_df, ["status", "employment_status"], ["status"])
-    emp_dept = find_col(emp_df, ["department", "department_name", "dept_name"], ["department", "dept"])
-    emp_salary = find_col(emp_df, ["annual_salary", "salary", "monthly_salary", "net_salary"], ["salary", "pay"])
-    active_count = int(emp_df[emp_df[emp_status].astype(str).str.lower().isin(["active", "employed", "working", "permanent"])].shape[0]) if emp_status else len(emp_df)
+    emp_df = emp_pairs[0][1].copy() if emp_pairs else pd.DataFrame()
     att_pairs = matching_frames("Attendance")
-    att_df = att_pairs[0][1] if att_pairs else pd.DataFrame()
-    att_status = find_col(att_df, ["attendance_status", "status"], ["status"])
-    present_count = int(att_df[att_status].astype(str).str.lower().str.contains("present|work from home|wfh|half day", regex=True, na=False).sum()) if att_status else 0
+    att_df = att_pairs[0][1].copy() if att_pairs else pd.DataFrame()
     pay_pairs = matching_frames("Payroll")
-    pay_df = pay_pairs[0][1] if pay_pairs else pd.DataFrame()
-    pay_salary = find_col(pay_df, ["net_salary", "monthly_salary", "salary", "gross_salary"], ["salary", "pay"])
-    total_pay = pd.to_numeric(pay_df[pay_salary], errors="coerce").sum() if pay_salary else 0
+    pay_df = pay_pairs[0][1].copy() if pay_pairs else pd.DataFrame()
     leave_pairs = matching_frames("Leave Management")
-    leave_df = leave_pairs[0][1] if leave_pairs else pd.DataFrame()
-    leave_status = find_col(leave_df, ["status", "approval_status"], ["status"])
-    pending_leave = int(leave_df[leave_status].astype(str).str.lower().eq("pending").sum()) if leave_status else 0
+    leave_df = leave_pairs[0][1].copy() if leave_pairs else pd.DataFrame()
+
+    emp_status = find_col(emp_df, ["employment_status", "employee_status", "status"], ["employmentstatus", "employeestatus", "status"])
+    emp_dept = find_col(emp_df, ["department_name", "department", "dept_name", "team"], ["department", "dept", "team"])
+    join_col = find_col(emp_df, ["joining_date", "date_of_joining", "hire_date", "start_date"], ["joiningdate", "dateofjoining", "hiredate"])
+    emp_salary = find_col(emp_df, ["annual_salary", "monthly_salary", "salary", "ctc", "gross_salary", "net_salary"], ["salary", "wage", "compensation", "ctc"])
+    att_status = find_col(att_df, ["attendance_status", "status", "attendance"], ["attendancestatus", "status"])
+    att_date = find_col(att_df, ["attendance_date", "date", "work_date"], ["attendancedate", "workdate", "date"])
+    pay_salary = find_col(pay_df, ["net_salary", "gross_salary", "monthly_salary", "salary", "pay_amount", "amount"], ["salary", "payamount", "amount"])
+    pay_period = find_col(pay_df, ["pay_month", "pay_period", "pay_date", "month"], ["paymonth", "payperiod", "paydate"])
+    leave_status = find_col(leave_df, ["approval_status", "leave_status", "status"], ["approvalstatus", "leavestatus", "status"])
+
+    if emp_df.empty:
+        st.warning("No employee worksheet was detected. Upload a workbook with an employee/staff sheet to see workforce KPIs.")
+    total_employees = len(emp_df)
+    if emp_status:
+        status_text = emp_df[emp_status].astype(str).str.strip().str.lower()
+        active_count = int(status_text.isin(["active", "employed", "working", "permanent", "on leave"] ).sum())
+    else:
+        active_count = total_employees
+    today = pd.Timestamp.today().normalize()
+    if join_col:
+        join_dates = safe_date_series(emp_df, join_col)
+        new_hires = int(join_dates.between(today - pd.Timedelta(days=29), today, inclusive="both").sum())
+    else:
+        new_hires = 0
+    if att_status:
+        att_text = att_df[att_status].astype(str).str.strip().str.lower()
+        valid_attendance = ~att_text.isin(["", "nan", "none", "not marked", "unknown"])
+        attended = att_text.str.contains(r"present|work from home|\bwfh\b|half day|on time", regex=True, na=False)
+        attendance_rate = (100 * int((attended & valid_attendance).sum()) / max(int(valid_attendance.sum()), 1))
+        attendance_display = f"{attendance_rate:.1f}%" if valid_attendance.any() else "—"
+    else:
+        attendance_display = "—"
+    if pay_salary:
+        pay_values = pd.to_numeric(pay_df[pay_salary].astype(str).str.replace(r"[^0-9.\-]", "", regex=True), errors="coerce")
+        if pay_period:
+            pay_dates = safe_date_series(pay_df, pay_period)
+            current_month = today.replace(day=1)
+            current_pay = pay_values[pay_dates.dt.to_period("M") == current_month.to_period("M")]
+            payroll_total = current_pay.sum() if current_pay.notna().any() else pay_values.sum()
+            payroll_label = "Current-month payroll" if current_pay.notna().any() else "Payroll total"
+        else:
+            payroll_total = pay_values.sum()
+            payroll_label = "Payroll total"
+    else:
+        payroll_total, payroll_label = None, "Payroll total"
+    pending_leave = int(leave_df[leave_status].astype(str).str.strip().str.lower().eq("pending").sum()) if leave_status else 0
+
     metric_row([
-        ("Total employees", f"{len(emp_df):,}", "Records in the employee worksheet"),
-        ("Active employees", f"{active_count:,}", "Based on employment status when available"),
-        ("Attendance marked present", f"{present_count:,}", "Present, WFH and half-day records in selected attendance data"),
-        ("Pending leave requests", f"{pending_leave:,}", "Requests whose status is Pending"),
+        ("Total employees", f"{total_employees:,}", "Rows in the detected employee worksheet"),
+        ("Active employees", f"{active_count:,}", "Based on employment status; on-leave employees are included in workforce headcount"),
+        ("New hires · 30 days", f"{new_hires:,}" if join_col else "—", "Employees whose joining date falls in the last 30 days"),
+        ("Attendance rate", attendance_display, "Share of marked attendance records recorded as present, WFH or half-day"),
+        ("Pending leave", f"{pending_leave:,}" if leave_status else "—", "Leave requests awaiting a decision"),
     ])
-    st.markdown("### Workforce snapshot")
+    if payroll_total is not None:
+        st.metric(payroll_label, money(payroll_total), help="Sum of the detected salary field; confirm whether the workbook stores monthly or annual amounts.")
+
+    st.markdown("### Workforce analytics")
     left, right = st.columns(2)
     with left:
-        if emp_dept:
-            render_chart(emp_df, emp_dept, "Employees by department")
+        if emp_dept and not emp_df.empty:
+            dept_counts = emp_df[emp_dept].fillna("Not specified").astype(str).value_counts().rename_axis("Department").reset_index(name="Employees")
+            fig = px.bar(dept_counts, x="Department", y="Employees", text="Employees", title="Headcount by department")
+            fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), xaxis_title="", yaxis_title="Employees")
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("No department column detected in the employee sheet.")
+            st.info("A department column is needed for the headcount chart.")
     with right:
-        if emp_status:
-            render_chart(emp_df, emp_status, "Employment status")
-        elif emp_salary:
-            numeric = pd.to_numeric(emp_df[emp_salary], errors="coerce").dropna()
-            if not numeric.empty:
-                fig = px.histogram(numeric, nbins=18, title=f"Distribution of {emp_salary.replace('_',' ').title()}")
+        if emp_status and not emp_df.empty:
+            status_counts = emp_df[emp_status].fillna("Not specified").astype(str).value_counts().rename_axis("Status").reset_index(name="Employees")
+            fig = px.pie(status_counts, names="Status", values="Employees", hole=.55, title="Employment status mix")
+            fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), legend_title_text="Status")
+            st.plotly_chart(fig, use_container_width=True)
+        elif emp_salary and not emp_df.empty:
+            nums = pd.to_numeric(emp_df[emp_salary], errors="coerce").dropna()
+            if not nums.empty:
+                fig = px.histogram(x=nums, nbins=18, title="Salary distribution")
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No employment status or numeric salary values were found.")
         else:
-            st.info("Add a status, department or salary field for more workforce charts.")
+            st.info("An employment status column is needed for this chart.")
+
+    left, right = st.columns(2)
+    with left:
+        if att_status and att_date and not att_df.empty:
+            att_plot = att_df.copy()
+            att_plot["_date"] = safe_date_series(att_plot, att_date)
+            att_plot["_status"] = att_plot[att_status].astype(str).str.strip().str.title()
+            att_plot = att_plot.dropna(subset=["_date"])
+            if not att_plot.empty:
+                daily = att_plot.groupby(["_date", "_status"]).size().reset_index(name="Records")
+                daily = daily[daily["_date"] >= today - pd.Timedelta(days=29)]
+                if not daily.empty:
+                    fig = px.line(daily, x="_date", y="Records", color="_status", markers=True, title="Attendance trend · last 30 days")
+                    fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), xaxis_title="Date", yaxis_title="Records", legend_title_text="Status")
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No attendance records in the last 30 days.")
+            else:
+                st.info("No valid attendance dates were found.")
+        else:
+            st.info("Attendance trend requires both a date and a status column.")
+    with right:
+        if pay_salary and not pay_df.empty:
+            pay_plot = pay_df.copy()
+            pay_plot["_salary_value"] = pd.to_numeric(pay_plot[pay_salary].astype(str).str.replace(r"[^0-9.\-]", "", regex=True), errors="coerce")
+            pay_dept = find_col(pay_plot, ["department", "department_name", "dept_name"], ["department", "dept"])
+            if pay_dept and pay_plot["_salary_value"].notna().any():
+                by_dept = pay_plot.groupby(pay_dept, dropna=False)["_salary_value"].sum().reset_index()
+                by_dept[pay_dept] = by_dept[pay_dept].fillna("Not specified").astype(str)
+                fig = px.bar(by_dept, x=pay_dept, y="_salary_value", title="Payroll by department", labels={"_salary_value": "Salary total", pay_dept: "Department"})
+                fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), xaxis_title="", yaxis_title="Amount")
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("A department field is needed to compare payroll by department.")
+        else:
+            st.info("Upload a payroll worksheet with a numeric salary field to see payroll analytics.")
+
     st.markdown("### Recent employee records")
-    st.dataframe(emp_df.head(10), use_container_width=True, hide_index=True)
-    st.download_button("Download employee snapshot (CSV)", emp_df.to_csv(index=False).encode("utf-8-sig"),
-                       file_name="employee_snapshot.csv", mime="text/csv")
+    if not emp_df.empty:
+        recent = emp_df.copy()
+        if join_col:
+            recent["_sort_join_date"] = safe_date_series(recent, join_col)
+            recent = recent.sort_values("_sort_join_date", ascending=False, na_position="last").drop(columns=["_sort_join_date"])
+        st.dataframe(recent.head(10), use_container_width=True, hide_index=True)
+        st.download_button("Download employee snapshot (CSV)", emp_df.to_csv(index=False).encode("utf-8-sig"),
+                           file_name="employee_snapshot.csv", mime="text/csv")
+    else:
+        st.info("Employee records will appear here when an employee worksheet is available.")
 
 elif page == "Employee Directory":
     st.subheader("Employee directory")
@@ -518,8 +619,22 @@ elif page == "Exits & Attrition":
 elif page == "Data Quality":
     st.subheader(f"Data quality report — {selected_sheet}")
     render_quality(frame)
-    st.markdown("### Duplicate records")
+    st.markdown("### Validation checks")
     duplicates = frame[frame.duplicated(keep=False)]
+    email_col = find_col(frame, ["email", "email_address", "work_email"], ["email"])
+    id_col = find_col(frame, ["employee_id", "emp_id", "staff_id", "employee_code"], ["employeeid", "empid", "staffid"])
+    validation_rows = []
+    validation_rows.append({"Check": "Exact duplicate rows", "Issue count": int(frame.duplicated().sum()), "Result": "Review" if frame.duplicated().any() else "Pass"})
+    if id_col:
+        duplicate_ids = frame[id_col].dropna().astype(str).duplicated(keep=False)
+        validation_rows.append({"Check": f"Duplicate values in {id_col}", "Issue count": int(duplicate_ids.sum()), "Result": "Review" if duplicate_ids.any() else "Pass"})
+    if email_col:
+        emails = frame[email_col].dropna().astype(str).str.strip()
+        invalid_email = ~emails.str.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+        duplicate_email = emails.str.lower().duplicated(keep=False)
+        validation_rows.append({"Check": "Invalid email formats", "Issue count": int(invalid_email.sum()), "Result": "Review" if invalid_email.any() else "Pass"})
+        validation_rows.append({"Check": "Duplicate email addresses", "Issue count": int(duplicate_email.sum()), "Result": "Review" if duplicate_email.any() else "Pass"})
+    st.dataframe(pd.DataFrame(validation_rows), use_container_width=True, hide_index=True)
     if duplicates.empty:
         st.success("No exact duplicate rows found in this worksheet.")
     else:
@@ -564,6 +679,9 @@ else:  # Data Explorer
                            file_name=f"{norm(selected)}_filtered.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                            use_container_width=True)
+    st.download_button("Export all worksheets as Excel", excel_bytes(all_data),
+                       file_name="peopledesk_all_worksheets.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.markdown("---")
 st.caption("PeopleDesk HRMS · Built with Streamlit · Demo data is fictional; uploaded workbooks are not overwritten.")
