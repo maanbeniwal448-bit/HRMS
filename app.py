@@ -320,33 +320,44 @@ st.markdown("---")
 st.subheader("Dataset Preview")
 
 filtered_df = df.copy()
+
 with st.expander("Filter the displayed data", expanded=False):
     filter_columns = st.multiselect(
-    "Choose columns to filter",
-    options=df.columns.tolist(),
-    default=[],
-    key=f"filter_columns_{selected_sheet_name}",
-    placeholder="Select one or more columns...",
-)
-    filtered_df = df.copy()
+        "Choose columns to filter",
+        options=df.columns.tolist(),
+        default=[],
+        key=f"filter_columns_v2_{selected_sheet_name}",
+        placeholder="Select columns to filter...",
+    )
+
     for col in filter_columns:
         non_null_values = filtered_df[col].dropna().unique().tolist()
+
         if len(non_null_values) > 200:
-            st.caption(f"Skipping '{col}' because it contains more than 200 distinct values.")
+            st.caption(
+                f"'{col}' has more than 200 distinct values. "
+                "Choose a different column to filter."
+            )
             continue
-        choices = sorted([str(value) for value in non_null_values])
+
+        choices = sorted(str(value) for value in non_null_values)
+
         chosen = st.multiselect(
-            f"Values for {col}",
+            f"Select values for {col}",
             options=choices,
-            default=choices,
-            key=f"filter_values_{selected_sheet_name}_{col}",
+            default=[],
+            key=f"filter_values_v2_{selected_sheet_name}_{col}",
+            placeholder=f"Choose {col} values...",
         )
+
+        # Apply a filter only when the user selects values.
         if chosen:
-            filtered_df = filtered_df[filtered_df[col].astype(str).isin(chosen)]
-        else:
-            filtered_df = filtered_df.iloc[0:0]
+            filtered_df = filtered_df[
+                filtered_df[col].astype(str).isin(chosen)
+            ]
 
 st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
+st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 download_col1, download_col2 = st.columns(2)
