@@ -315,6 +315,7 @@ with m3:
 # Sheet-aware KPIs and charts.
 render_sheet_insights(df, selected_sheet_name)
 
+
 # ---------- Data preview, filters and export ----------
 st.markdown("---")
 st.subheader("Dataset Preview")
@@ -326,12 +327,12 @@ with st.expander("Filter the displayed data", expanded=False):
         "Choose columns to filter",
         options=df.columns.tolist(),
         default=[],
-        key=f"filter_columns_v2_{selected_sheet_name}",
+        key=f"filter_columns_v3_{selected_sheet_name}",
         placeholder="Select columns to filter...",
     )
 
     for col in filter_columns:
-        non_null_values = filtered_df[col].dropna().unique().tolist()
+        non_null_values = df[col].dropna().unique().tolist()
 
         if len(non_null_values) > 200:
             st.caption(
@@ -346,7 +347,18 @@ with st.expander("Filter the displayed data", expanded=False):
             f"Select values for {col}",
             options=choices,
             default=[],
-            key=f"filter_values_v2_{selected_sheet_name}_{col}",
+            key=f"filter_values_v3_{selected_sheet_name}_{col}",
+            placeholder=f"Choose {col} values...",
+        )
+
+        if chosen:
+            filtered_df = filtered_df[
+                filtered_df[col].astype(str).isin(chosen)
+            ]
+
+st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
+st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+
             placeholder=f"Choose {col} values...",
         )
 
