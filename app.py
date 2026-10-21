@@ -351,13 +351,11 @@ with st.expander("Filter the displayed data", expanded=False):
         )
 
         # Apply a filter only when the user selects values.
-        if chosen:
-            filtered_df = filtered_df[
-                filtered_df[col].astype(str).isin(chosen)
-            ]
-
-st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
-st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+                chosen = st.multiselect(
+            f"Select values for {col}",
+            options=choices,
+            default=[],
+            key=f"filter_values_v2_{selected_sheet_name}_{col}",
             placeholder=f"Choose {col} values...",
         )
 
