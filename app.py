@@ -358,6 +358,17 @@ with st.expander("Filter the displayed data", expanded=False):
 
 st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
+            placeholder=f"Choose {col} values...",
+        )
+
+        # Apply a filter only when the user selects values.
+        if chosen:
+            filtered_df = filtered_df[
+                filtered_df[col].astype(str).isin(chosen)
+            ]
+
+st.caption(f"Showing {len(filtered_df):,} of {len(df):,} rows.")
+st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 st.dataframe(filtered_df, use_container_width=True, hide_index=True)
 
 download_col1, download_col2 = st.columns(2)
